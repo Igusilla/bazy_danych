@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turbo Quiz Bazy Danych</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; color: #333; display: flex; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .quiz-container { background: white; width: 100%; max-width: 800px; padding: 30px; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); position: relative; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .score-board { font-size: 1.2em; font-weight: bold; }
+        .score-correct { color: #2ecc71; margin-right: 15px; }
+        .score-wrong { color: #e74c3c; }
+        .question-text { font-size: 1.3em; margin-bottom: 25px; font-weight: 600; }
+        .options { display: flex; flex-direction: column; gap: 10px; }
+        .option-btn { padding: 15px; border: 2px solid #ddd; border-radius: 8px; background: white; cursor: pointer; font-size: 1em; text-align: left; transition: all 0.2s; }
+        .option-btn:hover:not(:disabled) { background-color: #f0f8ff; border-color: #3498db; }
+        .option-btn.correct { background-color: #d4edda; border-color: #28a745; color: #155724; }
+        .option-btn.wrong { background-color: #f8d7da; border-color: #dc3545; color: #721c24; }
+        .explanation { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; }
+        .explanation.visible { display: block; }
+        .explanation.success { background-color: #e9f7ef; border-left: 5px solid #2ecc71; }
+        .explanation.error { background-color: #fceae9; border-left: 5px solid #e74c3c; }
+        .nav-buttons { margin-top: 25px; display: flex; justify-content: space-between; }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; background-color: #3498db; color: white; font-size: 1em; cursor: pointer; disabled: opacity 0.5; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .summary-view { text-align: center; }
+        .summary-list { text-align: left; margin-top: 30px; }
+        .review-item { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .review-q { font-weight: bold; margin-bottom: 5px; }
+        .review-status { font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="quiz-container" id="quiz-box">
+    <div class="header">
+        <div id="progress">Pytanie 1 / 50</div>
+        <div class="score-board">
+            <span class="score-correct">✔ <span id="correct-count">0</span></span>
+            <span class="score-wrong">✖ <span id="wrong-count">0</span></span>
+        </div>
+    </div>
+
+    <div id="question-area">
+        <div class="question-text" id="question-text">Ładowanie pytania...</div>
+        <div class="options" id="options-container"></div>
+        <div class="explanation" id="explanation"></div>
+    </div>
+
+    <div class="nav-buttons">
+        <button class="btn" id="prev-btn" onclick="prevQuestion()" disabled>Poprzednie</button>
+        <button class="btn" id="next-btn" onclick="nextQuestion()" disabled>Następne</button>
+    </div>
+</div>
+
+<script>
+// Baza danych pytań wygenerowana na podstawie przesłanych plików
+const questions = [
+    // --- NORMALIZACJA I TRANSAKCJE ---
+    {
+        q: "Tabela jest w Drugiej Postaci Normalnej (2NF) wtedy i tylko wtedy, gdy jest w 1NF oraz:",
+        options: [
+            "Każdy atrybut niekluczowy zależy od całości klucza podstawowego (eliminuje zależność od części klucza).",
+            "Nie zawiera powtarzających się rekordów.",
+            "Nie występują zależności przechodnie (atrybut zależy od innego atrybutu niekluczowego).",
+            "Wszystkie pola zawierają wartości atomowe."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: 2NF wymaga, aby każdy atrybut niekluczowy zależał od całego klucza podstawowego, co eliminuje zależność od części klucza w kluczach wielopolowych[cite: 287, 440]. [cite_start]Niepoprawne: B to warunek 1NF [cite: 286][cite_start], C to warunek 3NF[cite: 289], D to również cecha 1NF."
+    },
+    {
+        q: "Co oznacza własność 'Atomowość' (Atomicity) w modelu ACID transakcji?",
+        options: [
+            "Transakcja jest wykonywana w całości albo wcale ('wszystko albo nic').",
+            "Transakcja jest odizolowana od innych transakcji.",
+            "Po zatwierdzeniu transakcji zmiany są trwałe nawet w przypadku awarii.",
+            "Baza danych pozostaje spójna przed i po transakcji."
+        ],
+        correct: 0,
+        desc: "Poprawna: Atomowość oznacza, że wykonają się wszystkie operacje składowe albo żadna. [cite_start]Jeśli jedna zawiedzie, system cofa wszystkie[cite: 235, 460]. [cite_start]Niepoprawne: B to Izolacyjność, C to Trwałość, D to Spójność[cite: 238]."
+    },
+    {
+        q: "Które zjawisko NIEPOŻĄDANE występuje przy poziomie izolacji READ COMMITTED?",
+        options: [
+            "Non-repeatable reads (niepowtarzalny odczyt) oraz Phantom reads.",
+            "Dirty reads (brudny odczyt).",
+            "Żadne, ten poziom gwarantuje pełną izolację.",
+            "Tylko Phantom reads."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Przy READ COMMITTED (domyślny w SQL Server) nie występuje dirty read, ale mogą wystąpić non-repeatable reads i phantom reads[cite: 298, 477]. [cite_start]Niepoprawne: Dirty read występuje przy READ UNCOMMITTED[cite: 297]."
+    },
+    {
+        q: "Trzecia postać normalna (3NF) eliminuje:",
+        options: [
+            "Zależności przechodnie (atrybut niekluczowy zależy od innego atrybutu niekluczowego).",
+            "Zależności od części klucza podstawowego.",
+            "Grupy powtarzających się danych.",
+            "Zależności wielowartościowe."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: 3NF dotyczy zależności przechodnich, gdzie atrybut zależy od innego atrybutu niebędącego kluczem[cite: 289, 443]. [cite_start]Niepoprawne: B to 2NF, C to 4NF/1NF, D to 4NF[cite: 292]."
+    },
+    {
+        q: "Które polecenie służy do wycofania transakcji w przypadku błędu?",
+        options: [
+            "ROLLBACK",
+            "COMMIT",
+            "REVOKE",
+            "TRUNCATE"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: ROLLBACK cofa zmiany do stanu sprzed transakcji[cite: 237, 467]. [cite_start]Niepoprawne: COMMIT zatwierdza[cite: 236], REVOKE odbiera uprawnienia, TRUNCATE czyści tabelę."
+    },
+    // --- RELACJE I MODELE ---
+    {
+        q: "Co jest podstawową własnością baz danych noSQL w przeciwieństwie do relacyjnych?",
+        options: [
+            "Krotki (rekordy) mogą mieć różną strukturę (różne atrybuty) i brak sztywnego schematu.",
+            "Wymagają ścisłej normalizacji danych.",
+            "Zawsze gwarantują pełną transakcyjność ACID w każdym przypadku.",
+            "Opierają się wyłącznie na algebrze relacyjnej."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Bazy noSQL cechują się tym, że rekordy mogą mieć różną strukturę, są wysoko skalowalne i słabo nadają się do transakcji[cite: 180, 426]. Niepoprawne: Pozostałe to cechy baz relacyjnych."
+    },
+    {
+        q: "Problem 'wiatraka' (Fan Trap) w modelowaniu relacji występuje gdy:",
+        options: [
+            "Jedna encja nadrzędna jest połączona z dwiema podrzędnymi, które nie są połączone ze sobą, co gubi informację o powiązaniu między podrzędnymi.",
+            "Występuje pętla zwrotna na tej samej encji.",
+            "Brakuje relacji między dwiema encjami w strukturze liniowej (problem próżni).",
+            "Relacja jest typu wiele-do-wielu bez tabeli łączącej."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Problem wiatraka (Fan Trap) to sytuacja: Szkoła -> Wydział i Szkoła -> Pracownik, gdzie nie wiemy, na którym wydziale jest pracownik[cite: 264, 265]. [cite_start]Niepoprawne: C to problem próżni (Chasm Trap)[cite: 267]."
+    },
+    {
+        q: "Jeśli w relacji 1-N ustawimy regułę usuwania 'SET NULL', to po usunięciu rekordu nadrzędnego:",
+        options: [
+            "W powiązanych rekordach podrzędnych w polu klucza obcego zostanie wpisana wartość NULL.",
+            "System odmówi usunięcia rekordu nadrzędnego.",
+            "Zostaną usunięte wszystkie powiązane rekordy podrzędne.",
+            "Wartość klucza obcego zmieni się na 0."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: SET NULL powoduje ustawienie NULL w polu powiązania w tabeli związanej[cite: 280, 516]. [cite_start]Niepoprawne: B to Restrict [cite: 513][cite_start], C to Cascade[cite: 515]."
+    },
+    {
+        q: "Relacja wiele-do-wielu (N:M) w bazie relacyjnej jest realizowana fizycznie poprzez:",
+        options: [
+            "Tabelę łączącą, która zawiera klucze obce z obu łączonych tabel.",
+            "Dodanie klucza obcego do obu tabel nawzajem.",
+            "Dodanie pola z listą wartości po przecinku.",
+            "Nie da się zrealizować takiej relacji."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Fizycznym efektem relacji N:M jest powstanie trzeciej tabeli (łączącej) z dwoma relacjami 1:N[cite: 223, 279, 506]. Niepoprawne: Bazy relacyjne nie obsługują bezpośrednio N:M bez tabeli pośredniej."
+    },
+    {
+        q: "Co to jest 'klucz kandydujący'?",
+        options: [
+            "Pole lub grupa pól, które unikalnie identyfikują rekord i mogą potencjalnie zostać kluczem podstawowym.",
+            "Klucz obcy, który kandyduje do bycia kluczem głównym w innej tabeli.",
+            "Klucz sztuczny dodawany, gdy nie ma naturalnego.",
+            "Pole, które dopuszcza wartości NULL."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Klucz kandydujący to atrybut unikalny, który może pełnić rolę klucza podstawowego[cite: 211]. Niepoprawne: Klucz sztuczny (id) tworzymy, gdy brak kandydującego."
+    },
+    // --- SQL DDL / DML ---
+    {
+        q: "Która instrukcja służy do modyfikacji struktury istniejącej tabeli (np. dodania kolumny)?",
+        options: [
+            "ALTER TABLE",
+            "UPDATE TABLE",
+            "MODIFY TABLE",
+            "CREATE TABLE"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: ALTER TABLE służy do zmiany struktury (dodawanie pól, constraintów)[cite: 309, 564]. Niepoprawne: UPDATE służy do zmiany DANYCH, CREATE do tworzenia nowej tabeli."
+    },
+    {
+        q: "Polecenie TRUNCATE TABLE różni się od DELETE tym, że:",
+        options: [
+            "Jest szybsze, usuwa wszystkie rekordy i zazwyczaj nie jest w pełni logowane jak DELETE (w kontekście pojedynczych wierszy).",
+            "Pozwala na użycie klauzuli WHERE.",
+            "Można je cofnąć za pomocą ROLLBACK w każdej bazie bez wyjątków.",
+            "Usuwa tabelę wraz z jej strukturą."
+        ],
+        correct: 0,
+        desc: "Poprawna: TRUNCATE to operacja DDL (często), szybsza, usuwa wszystko, resetuje identity, bez WHERE. DELETE to DML, wolniejsze, z WHERE."
+    },
+    {
+        q: "Co robi instrukcja `DROP TABLE`?",
+        options: [
+            "Usuwa trwale tabelę wraz z jej strukturą i danymi z bazy.",
+            "Usuwa tylko dane z tabeli, zostawiając strukturę.",
+            "Usuwa wybrane wiersze z tabeli.",
+            "Odłącza tabelę od bazy, ale jej nie kasuje."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: DROP TABLE usuwa obiekt tabeli całkowicie (strukturę i dane)[cite: 308, 562]. Niepoprawne: B to TRUNCATE lub DELETE bez WHERE."
+    },
+    {
+        q: "Jakie słowo kluczowe jest używane do usunięcia duplikatów w wynikach zapytania SELECT?",
+        options: [
+            "DISTINCT",
+            "UNIQUE",
+            "DIFFERENT",
+            "NO DUPLICATES"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: SELECT DISTINCT usuwa powtarzające się rekordy z wyniku[cite: 327, 437]. Niepoprawne: UNIQUE to constraint w definicji tabeli."
+    },
+    {
+        q: "W jakiej kolejności logicznej wykonywane jest zapytanie SELECT?",
+        options: [
+            "FROM -> WHERE -> GROUP BY -> HAVING -> SELECT -> ORDER BY",
+            "SELECT -> FROM -> WHERE -> GROUP BY -> HAVING -> ORDER BY",
+            "FROM -> SELECT -> WHERE -> GROUP BY -> ORDER BY",
+            "SELECT -> WHERE -> FROM -> GROUP BY -> ORDER BY"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: System najpierw pobiera dane (FROM), filtruje (WHERE), grupuje (GROUP BY), filtruje grupy (HAVING), rzutuje (SELECT) i sortuje (ORDER BY)[cite: 335]."
+    },
+    // --- SQL SELECT & JOINS ---
+    {
+        q: "Wynikiem zapytania `SELECT * FROM T1 CROSS JOIN T2` jest:",
+        options: [
+            "Iloczyn kartezjański (każdy rekord z T1 połączony z każdym rekordem z T2).",
+            "Część wspólna obu tabel.",
+            "Rekordy z T1, które mają odpowiedniki w T2.",
+            "Suma rekordów z obu tabel (jak UNION)."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: CROSS JOIN tworzy iloczyn kartezjański, łącząc każdy wiersz z każdym[cite: 322, 348]. Niepoprawne: B to INTERSECT lub INNER JOIN, D to UNION."
+    },
+    {
+        q: "Który typ złączenia zwróci WSZYSTKIE rekordy z lewej tabeli i dopasowane z prawej (lub NULL jeśli brak dopasowania)?",
+        options: [
+            "LEFT JOIN",
+            "INNER JOIN",
+            "RIGHT JOIN",
+            "CROSS APPLY"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: LEFT JOIN (połączenie lewostronne) bierze wszystko z lewej i pasujące z prawej[cite: 323, 352]. Niepoprawne: INNER JOIN bierze tylko pasujące."
+    },
+    {
+        q: "Operator `APPLY` w T-SQL różni się od `JOIN` tym, że:",
+        options: [
+            "Pozwala połączyć tabelę z funkcją tabelaryczną lub podzapytaniem skorelowanym (wykonywanym dla każdego wiersza).",
+            "Jest standardem ANSI SQL dostępnym w każdej bazie danych.",
+            "Służy tylko do łączenia tabel znajdujących się na różnych serwerach.",
+            "Jest zawsze szybszy niż JOIN."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: APPLY (CROSS/OUTER) pozwala podać z prawej strony instrukcję/funkcję tworzącą tabelę dynamicznie dla każdego wiersza z lewej[cite: 356, 101]. Niepoprawne: APPLY jest specyficzne dla T-SQL (MS SQL)."
+    },
+    {
+        q: "Zapytanie `SELECT ... WHERE kolumna LIKE '_a%'` wybierze:",
+        options: [
+            "Teksty, w których drugim znakiem jest 'a'.",
+            "Teksty zaczynające się od 'a'.",
+            "Teksty kończące się na 'a'.",
+            "Teksty mające co najmniej dwa znaki."
+        ],
+        correct: 0,
+        desc: "Poprawna: Podkreślenie (_) zastępuje jeden dowolny znak, a % dowolny ciąg. [cite_start]Zatem '_a%' to jeden dowolny znak, potem 'a', potem cokolwiek[cite: 331, 27]. Niepoprawne: 'a%' to start od a."
+    },
+    {
+        q: "Które zapytanie zwróci część wspólną dwóch zapytań (rekordy występujące w obu zbiorach)?",
+        options: [
+            "INTERSECT",
+            "UNION",
+            "EXCEPT",
+            "CROSS JOIN"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: INTERSECT zwraca część wspólną zbiorów[cite: 340, 53]. Niepoprawne: UNION sumuje, EXCEPT odejmuje (różnica)."
+    },
+    // --- GRUPOWANIE I AGREGACJA ---
+    {
+        q: "Jaka jest różnica między `COUNT(*)` a `COUNT(pole)`?",
+        options: [
+            "COUNT(*) zlicza wszystkie rekordy (w tym NULL), a COUNT(pole) zlicza tylko wartości niepuste (NOT NULL) w tym polu.",
+            "Nie ma żadnej różnicy.",
+            "COUNT(*) jest wolniejsze.",
+            "COUNT(pole) zlicza unikalne wartości."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: COUNT(*) liczy wiersze w grupie, COUNT(pole) liczy wartości różne od NULL w danej kolumnie[cite: 344, 154]. Niepoprawne: Do unikalnych służy COUNT(DISTINCT pole)."
+    },
+    {
+        q: "Klauzula `HAVING` służy do:",
+        options: [
+            "Filtrowania grup po wykonaniu agregacji (np. suma > 100).",
+            "Filtrowania rekordów przed grupowaniem (zamiast WHERE).",
+            "Sortowania grup.",
+            "Łączenia tabel."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: HAVING to 'WHERE dla grup' – filtruje wyniki po agregacji[cite: 375, 147]. Niepoprawne: Do filtrowania rekordów przed grupowaniem służy WHERE."
+    },
+    {
+        q: "Co robi klauzula `ROLLUP` w zapytaniu `GROUP BY ROLLUP(a, b)`?",
+        options: [
+            "Generuje wiersze podsumowań pośrednich zachowując hierarchię (a,b), (a), ().",
+            "Generuje wszystkie możliwe kombinacje grup (kostka).",
+            "Grupuje tylko jawnie wskazane zestawy.",
+            "Sortuje wyniki losowo."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: ROLLUP generuje podsumowania hierarchiczne: pełne (a,b), pośrednie (a) i ogólne ()[cite: 379, 161]. Niepoprawne: Wszystkie kombinacje tworzy CUBE."
+    },
+    {
+        q: "Co zwraca funkcja `GROUPING(kolumna)`?",
+        options: [
+            "1 jeśli kolumna jest agregowana (np. jest NULLem w wierszu podsumowania), 0 jeśli jest elementem grupowania.",
+            "Wartość z kolumny.",
+            "Liczbę wierszy w grupie.",
+            "Nazwę kolumny."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: GROUPING zwraca 1, gdy element nie jest wykorzystany do grupowania (jest podsumowaniem/superagregatem), a 0 gdy jest[cite: 386, 171]."
+    },
+    {
+        q: "Aby wykonać 'wielokrotne grupowanie' bez generowania nadmiarowych podsumowań (tylko wybrane grupy), używamy:",
+        options: [
+            "GROUPING SETS",
+            "ROLLUP",
+            "CUBE",
+            "COMPUTE BY"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: GROUPING SETS jest najbardziej elastyczne i pozwala ręcznie wskazać konkretne grupy do obliczenia[cite: 383, 164]."
+    },
+    // --- PODZAPYTANIA I INNE ---
+    {
+        q: "Operator `IN` w podzapytaniu jest równoważny operatorowi:",
+        options: [
+            "=ANY",
+            "=ALL",
+            ">ANY",
+            "EXISTS"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: X IN (zbiór) oznacza, że X jest równe któremukolwiek elementowi ze zbioru, czyli =ANY[cite: 365, 119]. Niepoprawne: =ALL oznaczałoby równe wszystkim (bezużyteczne)."
+    },
+    {
+        q: "Co oznacza `>ALL (podzapytanie)`?",
+        options: [
+            "Wartość jest większa od największej wartości zwróconej przez podzapytanie (większa od wszystkich).",
+            "Wartość jest większa od najmniejszej wartości (większa od jakiejkolwiek).",
+            "Wartość jest większa od średniej.",
+            "To niepoprawna składnia."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: >ALL oznacza 'większy od każdego elementu zbioru', czyli w praktyce większy od maksimum[cite: 366, 121]."
+    },
+    {
+        q: "Aby sprawdzić, czy wartość pola jest PUSTA (nieznana), używamy warunku:",
+        options: [
+            "IS NULL",
+            "= NULL",
+            "== NULL",
+            "IS EMPTY"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: W SQL NULL nie jest równy niczemu (nawet innemu NULL), więc używamy operatora IS NULL[cite: 329, 21]. Niepoprawne: = NULL zawsze zwróci NULL (fałsz)."
+    },
+    {
+        q: "Funkcja `CAST` i `CONVERT` służą do:",
+        options: [
+            "Zamiany typów danych (np. daty na tekst).",
+            "Zamiany wielkości liter.",
+            "Szyfrowania danych.",
+            "Importu danych z CSV."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Obie funkcje służą do konwersji typów danych[cite: 345, 62]. CONVERT pozwala dodatkowo na formatowanie (np. daty)."
+    },
+    {
+        q: "W SQL Server domyślnym poziomem izolacji transakcji jest:",
+        options: [
+            "READ COMMITTED",
+            "READ UNCOMMITTED",
+            "SERIALIZABLE",
+            "REPEATABLE READ"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Domyślnym poziomem w MS SQL Server jest READ COMMITTED[cite: 477]. Zapewnia brak brudnych odczytów."
+    },
+    // --- TEORIA I PROJEKTOWANIE CD. ---
+    {
+        q: "Klucz obcy (Foreign Key) służy do:",
+        options: [
+            "Implementacji relacji między tabelami i zapewnienia integralności referencyjnej.",
+            "Jednoznacznej identyfikacji rekordu w tabeli.",
+            "Szyfrowania danych w tabeli.",
+            "Automatycznego numerowania wierszy."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Klucz obcy wskazuje na klucz podstawowy w innej tabeli, tworząc relację i dbając o spójność[cite: 213, 214]. Niepoprawne: B to klucz podstawowy."
+    },
+    {
+        q: "W modelu relacyjnym 'Krotka' (Tuple) odpowiada:",
+        options: [
+            "Wierszowi w tabeli.",
+            "Kolumnie w tabeli.",
+            "Tabeli.",
+            "Relacji."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Krotka to odpowiednik wiersza (rekordu) w modelu relacyjnym[cite: 186, 495]. Atrybut to kolumna."
+    },
+    {
+        q: "Co to jest 'klucz sztuczny'?",
+        options: [
+            "Dodatkowe pole (zazwyczaj ID autonumerowane) dodawane, gdy brak dobrego klucza naturalnego lub klucz naturalny jest złożony/niewygodny.",
+            "Klucz, który nie jest unikalny.",
+            "Klucz obcy pochodzący z innej bazy.",
+            "Klucz tymczasowy."
+        ],
+        correct: 0,
+        desc: "Poprawna: Klucz sztuczny (surrogate key) to np. [cite_start]IdPracownika, gdy w danych nie ma naturalnego identyfikatora[cite: 212]. Niepoprawne: Klucz podstawowy musi być unikalny."
+    },
+    {
+        q: "Zależność przechodnia (A -> B, B -> C) jest usuwana w procesie normalizacji do:",
+        options: [
+            "Trzeciej Postaci Normalnej (3NF).",
+            "Drugiej Postaci Normalnej (2NF).",
+            "Pierwszej Postaci Normalnej (1NF).",
+            "Czwartej Postaci Normalnej (4NF)."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: 3NF eliminuje zależności przechodnie (atrybut zależy od klucza poprzez inny atrybut)[cite: 289, 443]."
+    },
+    {
+        q: "Co oznacza reguła usuwania 'CASCADE' w relacji?",
+        options: [
+            "Usunięcie rekordu nadrzędnego powoduje automatyczne usunięcie wszystkich powiązanych rekordów podrzędnych.",
+            "System blokuje usunięcie rekordu nadrzędnego, jeśli istnieją podrzędne.",
+            "Usunięcie rekordu ustawia NULL w tabeli podrzędnej.",
+            "Usunięcie rekordu jest niemożliwe."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: CASCADE usuwa rekordy kaskadowo w tabelach związanych[cite: 280, 515]. Niepoprawne: B to Restrict."
+    },
+    {
+        q: "Baza danych w 1NF (Pierwszej Postaci Normalnej) musi spełniać warunek:",
+        options: [
+            "Wszystkie atrybuty są atomowe (niepodzielne) i brak powtarzających się grup.",
+            "Musi posiadać klucze obce.",
+            "Musi być w 2NF.",
+            "Nie może zawierać wartości NULL."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: 1NF wymaga atomowości danych i braku kolekcji/grup w jednym polu[cite: 286, 437]. Niepoprawne: NULLe są dozwolone (chyba że constraint zabrania)."
+    },
+    {
+        q: "Perspektywa (View) w bazie danych to:",
+        options: [
+            "Wirtualna tabela zdefiniowana przez zapytanie SQL, nieprzechowująca fizycznie danych (zazwyczaj).",
+            "Kopia zapasowa tabeli.",
+            "Specjalny rodzaj tabeli tymczasowej usuwanej po sesji.",
+            "Graficzny widok schematu bazy."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Perspektywa to zapisane zapytanie, które zachowuje się jak tabela, ale nie dubluje danych fizycznie[cite: 392, 393]."
+    },
+    {
+        q: "Wyzwalacz (Trigger) to:",
+        options: [
+            "Procedura uruchamiana automatycznie w reakcji na zdarzenie (INSERT, UPDATE, DELETE).",
+            "Rodzaj klucza obcego.",
+            "Funkcja agregująca.",
+            "Mechanizm do ręcznego uruchamiania skryptów."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Trigger to procedura 'odpalana' przez system po wystąpieniu określonego zdarzenia na danych[cite: 257, 401]."
+    },
+    {
+        q: "Czwarta postać normalna (4NF) dotyczy eliminacji:",
+        options: [
+            "Zależności wielowartościowych (niezależnych od siebie faktów w jednej tabeli opisujących ten sam obiekt).",
+            "Zależności przechodnich.",
+            "Grup powtarzalnych (1NF).",
+            "Zależności od części klucza."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: 4NF usuwa zależności wielowartościowe (np. uczeń ma wiele kółek i wiele języków w jednej tabeli bez związku między nimi)[cite: 292, 451]."
+    },
+    {
+        q: "Instrukcja `MERGE` (w T-SQL) służy do:",
+        options: [
+            "Wykonywania operacji INSERT, UPDATE lub DELETE w jednej instrukcji w zależności od tego, czy rekord istnieje.",
+            "Łączenia dwóch tabel w jedną (jak UNION).",
+            "Łączenia kolumn tekstowych.",
+            "Tworzenia kopii bazy danych."
+        ],
+        correct: 0,
+        desc: "Poprawna: MERGE (tzw. Upsert) pozwala wstawić dane jeśli ich nie ma, lub zaktualizować jeśli są."
+    },
+    {
+        q: "Co to jest 'dirty read'?",
+        options: [
+            "Odczyt danych, które zostały zmienione przez inną transakcję, ale jeszcze nie zatwierdzone (uncommitted).",
+            "Odczyt danych uszkodzonych fizycznie.",
+            "Odczyt danych, które zostały usunięte.",
+            "Błąd składni zapytania."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Dirty read to odczyt danych 'brudnych', czyli niezatwierdzonych, które mogą zostać wycofane[cite: 296, 469]."
+    },
+    {
+        q: "Jeśli w `SELECT` używamy funkcji agregującej (np. SUM) i zwykłych pól, to:",
+        options: [
+            "Zwykłe pola muszą znaleźć się w klauzuli GROUP BY.",
+            "Nie trzeba używać GROUP BY.",
+            "Zapytanie zwróci błąd tylko jeśli jest więcej niż 100 rekordów.",
+            "Funkcja agregująca policzy wynik dla każdego wiersza osobno."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Wszystkie pola nieagregowane w SELECT muszą być w GROUP BY[cite: 370, 135]. Inaczej zapytanie jest błędne."
+    },
+    {
+        q: "Typ danych `VARCHAR(n)` różni się od `CHAR(n)` tym, że:",
+        options: [
+            "VARCHAR zajmuje tyle miejsca ile faktycznie wpisano znaków (+ narzut), a CHAR zawsze rezerwuje stałą długość n.",
+            "VARCHAR służy tylko do liczb.",
+            "CHAR pozwala na polskie znaki, a VARCHAR nie.",
+            "VARCHAR jest zawsze szybszy w sortowaniu."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: CHAR ma stałą długość (dopełnia spacjami), VARCHAR zmienną (oszczędza miejsce, ale może być wolniejszy przy update/sort)[cite: 196, 197, 301]."
+    },
+    {
+        q: "Co oznacza skrót DDL?",
+        options: [
+            "Data Definition Language (CREATE, ALTER, DROP).",
+            "Data Manipulation Language (INSERT, UPDATE).",
+            "Data Control Language (GRANT, REVOKE).",
+            "Database Design Logic."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: DDL to język definicji danych, służący do zarządzania strukturą (tabele, widoki)[cite: 299, 547]."
+    },
+    {
+        q: "Co robi `DELETE FROM tabela` (bez WHERE)?",
+        options: [
+            "Usuwa wszystkie rekordy z tabeli, ale tabela pozostaje.",
+            "Usuwa tabelę z bazy danych.",
+            "Zwraca błąd, WHERE jest wymagane.",
+            "Usuwa tylko pierwszy rekord."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: DELETE bez WHERE usuwa wszystkie wiersze, ale zachowuje strukturę i loguje operacje[cite: 318, 602]."
+    },
+    {
+        q: "W modelu relacyjnym relacja 1:1 jest:",
+        options: [
+            "Rzadka, używana np. do wydzielenia danych poufnych lub podziału tabeli ze względu na limity.",
+            "Najczęstszym typem relacji.",
+            "Niemożliwa do zrealizowania.",
+            "Zawsze błędem projektowym."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Relacja 1:1 występuje rzadko, np. przy dziedziczeniu lub wydzielaniu rzadko używanych kolumn[cite: 278, 497]. Zazwyczaj dane trzyma się w jednej tabeli."
+    },
+    {
+        q: "Klucz podstawowy (Primary Key):",
+        options: [
+            "Musi być unikalny i nie może być NULL.",
+            "Może się powtarzać.",
+            "Może być NULL.",
+            "Musi być liczbą całkowitą."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: PK identyfikuje rekord, więc musi być UNIQUE i NOT NULL[cite: 210, 305]."
+    },
+    {
+        q: "Aby połączyć tabelę 'Pracownicy' samą ze sobą (np. szef-podwładny), używamy:",
+        options: [
+            "Relacji rekurencyjnej (samozłączenia).",
+            "Jest to niemożliwe w SQL.",
+            "Operatora UNION.",
+            "Tabeli przestawnej."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Relacja unarna (rekurencyjna) łączy tabelę z nią samą (np. id_przełożonego wskazuje na id_pracownika w tej samej tabeli)[cite: 243, 603]."
+    },
+    {
+        q: "Funkcja `GETDATE()` w T-SQL zwraca:",
+        options: [
+            "Aktualną datę i godzinę serwera.",
+            "Tylko datę.",
+            "Datę ostatniej modyfikacji rekordu.",
+            "Datę urodzenia użytkownika."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: GETDATE() zwraca bieżący znacznik czasu systemowego[cite: 303, 550]."
+    },
+    {
+        q: "Co oznacza `Constraint CHECK`?",
+        options: [
+            "Regułę poprawności sprawdzającą warunek logiczny przy wprowadzaniu danych (np. cena > 0).",
+            "Sprawdzenie pisowni.",
+            "Klucz obcy.",
+            "Wymuszenie unikalności."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: CHECK definiuje wyrażenie logiczne, które musi być spełnione dla wiersza (np. salary > 0)[cite: 305, 552]."
+    },
+    {
+        q: "W relacji wiele-do-wielu (N:M), tabela łącząca posiada zazwyczaj:",
+        options: [
+            "Klucz podstawowy złożony z dwóch kluczy obcych.",
+            "Tylko jeden klucz obcy.",
+            "Brak kluczy.",
+            "Własny klucz ID i żadnych innych."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Tabela łącząca zawiera klucze obce do obu tabel i często one razem tworzą złożony klucz podstawowy (Composite PK)[cite: 279, 506]."
+    },
+    {
+        q: "Instrukcja `USE nazwa_bazy` służy do:",
+        options: [
+            "Przełączenia kontekstu na wskazaną bazę danych.",
+            "Użycia tabeli w zapytaniu.",
+            "Nadania uprawnień.",
+            "Tworzenia nowej bazy."
+        ],
+        correct: 0,
+        desc: "Poprawna: USE zmienia aktywną bazę danych, na której wykonujemy zapytania."
+    },
+    {
+        q: "Normalizacja danych ma na celu głównie:",
+        options: [
+            "Eliminację redundancji (powtórzeń) i zapewnienie spójności danych.",
+            "Zwiększenie szybkości odczytu (SELECT).",
+            "Zmniejszenie liczby tabel.",
+            "Szyfrowanie danych."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Normalizacja redukuje nadmiarowość i anomalie przy modyfikacji, choć może spowolnić odczyt przez konieczność łączenia tabel (JOIN)[cite: 282, 433]."
+    },
+    {
+        q: "Denormalizacja to:",
+        options: [
+            "Celowe wprowadzenie redundancji (zmniejszenie liczby tabel) w celu przyspieszenia odczytu.",
+            "Naprawianie błędów w normalizacji.",
+            "Usuwanie danych.",
+            "Proces tworzenia kopii zapasowej."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Denormalizacja to proces odwrotny, stosowany np. w hurtowniach danych dla wydajności zapytań kosztem redundancji[cite: 294, 456]."
+    },
+    {
+        q: "Co oznacza zapis `VARCHAR(50)`?",
+        options: [
+            "Pole tekstowe o zmiennej długości, mieszczące maksymalnie 50 znaków.",
+            "Pole tekstowe o stałej długości 50 znaków.",
+            "Pole liczbowe o wartości do 50.",
+            "Pole binarne."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: VARCHAR to Variable Character, n określa limit znaków[cite: 197, 301]."
+    },
+    {
+        q: "Aby pobrać 5 pierwszych rekordów w T-SQL używamy:",
+        options: [
+            "SELECT TOP 5 ...",
+            "SELECT ... LIMIT 5",
+            "SELECT ... ROWNUM <= 5",
+            "SELECT ... FETCH FIRST 5 ROWS ONLY"
+        ],
+        correct: 0,
+        desc: "Poprawna: W T-SQL (MS SQL) używa się TOP. LIMIT jest w MySQL/PostgreSQL."
+    },
+    {
+        q: "Co zwróci `SELECT 10 + NULL`?",
+        options: [
+            "NULL",
+            "10",
+            "0",
+            "Błąd"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: W SQL każda operacja arytmetyczna z NULL daje wynik NULL (nieznana + 10 = nieznana)[cite: 415]."
+    },
+    {
+        q: "Aby posortować wyniki malejąco, używamy:",
+        options: [
+            "ORDER BY kolumna DESC",
+            "ORDER BY kolumna ASC",
+            "SORT BY kolumna DOWN",
+            "GROUP BY kolumna DESC"
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: DESC oznacza Descending (malejąco), ASC to domyślne rosnąco[cite: 328, 15]."
+    },
+    {
+        q: "Model hierarchiczny baz danych (już nieużywany) miał strukturę:",
+        options: [
+            "Odwróconego drzewa.",
+            "Tabel połączonych relacjami.",
+            "Sieci (grafu).",
+            "Płaskiego pliku."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: Model hierarchiczny opierał się na strukturze drzewa (rodzic-dziecko 1:N)[cite: 178, 424]."
+    },
+    {
+        q: "W modelu ACID, literka 'I' oznacza:",
+        options: [
+            "Isolation (Izolacja).",
+            "Integrity (Integralność).",
+            "Index (Indeks).",
+            "Identity (Tożsamość)."
+        ],
+        correct: 0,
+        [cite_start]desc: "Poprawna: I = Isolation (transakcje nie widzą swoich pośrednich stanów)[cite: 238, 459]."
+    }
+];
+
+let currentQuestionIndex = 0;
+let userAnswers = new Array(questions.length).fill(null);
+let scoreCorrect = 0;
+let scoreWrong = 0;
+
+function loadQuestion() {
+    const qData = questions[currentQuestionIndex];
+    document.getElementById("question-text").innerText = `${currentQuestionIndex + 1}. ${qData.q}`;
+    
+    const optionsHtml = qData.options.map((opt, index) => {
+        let btnClass = "option-btn";
+        let disabled = "";
+        
+        // Jeśli użytkownik już odpowiedział
+        if (userAnswers[currentQuestionIndex] !== null) {
+            disabled = "disabled";
+            if (index === qData.correct) btnClass += " correct";
+            else if (index === userAnswers[currentQuestionIndex]) btnClass += " wrong";
+        }
+
+        return `<button class="${btnClass}" onclick="checkAnswer(${index})" ${disabled}>${["A", "B", "C", "D"][index]}. ${opt}</button>`;
+    }).join("");
+
+    document.getElementById("options-container").innerHTML = optionsHtml;
+    
+    // Obsługa wyjaśnienia
+    const explanationDiv = document.getElementById("explanation");
+    if (userAnswers[currentQuestionIndex] !== null) {
+        const isCorrect = userAnswers[currentQuestionIndex] === qData.correct;
+        explanationDiv.innerHTML = `<strong>${isCorrect ? "Dobrze!" : "Źle!"}</strong> ${qData.desc}`;
+        explanationDiv.className = `explanation visible ${isCorrect ? "success" : "error"}`;
+    } else {
+        explanationDiv.className = "explanation";
+        explanationDiv.innerHTML = "";
+    }
+
+    // Aktualizacja nawigacji
+    document.getElementById("progress").innerText = `Pytanie ${currentQuestionIndex + 1} / ${questions.length}`;
+    document.getElementById("prev-btn").disabled = currentQuestionIndex === 0;
+    document.getElementById("next-btn").innerText = currentQuestionIndex === questions.length - 1 ? "Zakończ i pokaż wyniki" : "Następne";
+    document.getElementById("next-btn").disabled = false; // Zawsze aktywne, można pomijać, ale lepiej wymusić? Wg opisu "można przechodzić".
+}
+
+function checkAnswer(selectedIndex) {
+    if (userAnswers[currentQuestionIndex] !== null) return; // Już odpowiedziano
+
+    userAnswers[currentQuestionIndex] = selectedIndex;
+    const qData = questions[currentQuestionIndex];
+    const isCorrect = selectedIndex === qData.correct;
+
+    if (isCorrect) scoreCorrect++;
+    else scoreWrong++;
+
+    updateScoreBoard();
+    loadQuestion(); // Przeładuj, aby pokazać kolory i wyjaśnienie
+}
+
+function updateScoreBoard() {
+    document.getElementById("correct-count").innerText = scoreCorrect;
+    document.getElementById("wrong-count").innerText = scoreWrong;
+}
+
+function prevQuestion() {
+    if (currentQuestionIndex > 0) {
+        currentQuestionIndex--;
+        loadQuestion();
+    }
+}
+
+function nextQuestion() {
+    if (currentQuestionIndex < questions.length - 1) {
+        currentQuestionIndex++;
+        loadQuestion();
+    } else {
+        showSummary();
+    }
+}
+
+function showSummary() {
+    const container = document.getElementById("quiz-box");
+    let html = `<div class="summary-view">
+        <h2>Koniec Quizu!</h2>
+        <p class="score-board">
+            Poprawne: <span class="score-correct">${scoreCorrect}</span> | 
+            Błędne: <span class="score-wrong">${scoreWrong}</span>
+        </p>
+        <h3>Przegląd odpowiedzi:</h3>
+        <div class="summary-list">`;
+
+    questions.forEach((q, i) => {
+        const userAnswer = userAnswers[i];
+        const status = userAnswer === q.correct ? 
+            '<span style="color:green">Poprawnie</span>' : 
+            (userAnswer === null ? '<span style="color:gray">Pominięto</span>' : '<span style="color:red">Błędnie</span>');
+        
+        html += `<div class="review-item">
+            <div class="review-q">${i+1}. ${q.q}</div>
+            <div class="review-status">Twój wynik: ${status}</div>
+            <div style="font-size:0.9em; color:#555; margin-top:5px;">Poprawna: ${q.options[q.correct]}</div>
+        </div>`;
+    });
+
+    html += `</div><button class="btn" onclick="location.reload()" style="margin-top:20px;">Zacznij od nowa</button></div>`;
+    container.innerHTML = html;
+}
+
+// Start
+loadQuestion();
+
+</script>
+
+</body>
+</html>
